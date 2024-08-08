@@ -1,0 +1,57 @@
+{
+  "name": "@digital-boss/n8n-nodes-basic-ftp",
+  "version": "0.1.0",
+  "description": "N8n node to interact with FTP servers using the basic-ftp library",
+  "license": "MIT",
+  "homepage": "https://github.com/digital-boss/n8n-nodes-basic-ftp",
+  "author": {
+    "name": "Valentina Lilova",
+    "email": "valentina.lilova@digital-boss.de"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/digital-boss/n8n-nodes-basic-ftp.git"
+  },
+  "keywords": [
+    "n8n",
+    "workflow",
+    "n8n-community-node-package",
+    "digital boss"
+  ],
+  "main": "index.js",
+  "scripts": {
+    "preinstall": "npx only-allow pnpm",
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier nodes credentials --write",
+    "lint": "eslint nodes credentials package.json",
+    "lintfix": "eslint nodes credentials package.json --fix",
+    "prepublishOnly": "pnpm build && pnpm lint -c .eslintrc.prepublish.js nodes credentials package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "credentials": [
+      "dist/credentials/BasicFtpApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/BasicFtp/BasicFtp.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^7.15.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-n8n-nodes-base": "^1.16.1",
+    "gulp": "^4.0.2",
+    "n8n-workflow": "*",
+    "prettier": "^3.3.2",
+    "typescript": "^5.5.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "dependencies": {
+    "basic-ftp": "^5.0.5"
+  }
+}
