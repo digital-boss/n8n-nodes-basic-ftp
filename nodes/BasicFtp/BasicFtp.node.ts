@@ -1,4 +1,3 @@
-
 import {
 	IDataObject,
 	IExecuteFunctions,
@@ -24,7 +23,7 @@ export class BasicFtp implements INodeType {
 		subtitle: '={{$parameter["operation"]}}',
 		description: `Implement the operations from the "basic-ftp" library`,
 		defaults: {
-				name: 'BasicFtp',
+			name: 'BasicFtp',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
@@ -45,6 +44,11 @@ export class BasicFtp implements INodeType {
 				noDataExpression: true,
 				options: [
 					{
+						name: 'Delete',
+						value: 'delete',
+						action: 'Delete a file on the server',
+					},
+					{
 						name: 'Download',
 						value: 'download',
 						action: 'Download a file from the server',
@@ -53,6 +57,21 @@ export class BasicFtp implements INodeType {
 						name: 'List',
 						value: 'list',
 						action: 'List the contents of a folder',
+					},
+					{
+						name: 'Make Directory',
+						value: 'mkdir',
+						action: 'Create a directory on the server',
+					},
+					{
+						name: 'Remove Directory',
+						value: 'rmdir',
+						action: 'Remove a directory on the server',
+					},
+					{
+						name: 'Upload',
+						value: 'upload',
+						action: 'Upload a file to the server',
 					},
 				],
 				default: 'list',
@@ -64,7 +83,7 @@ export class BasicFtp implements INodeType {
 				type: 'string',
 				displayOptions: {
 					show: {
-						operation: ['download'],
+						operation: ['download', 'upload'],
 					},
 				},
 				default: '',
@@ -78,7 +97,7 @@ export class BasicFtp implements INodeType {
 				type: 'string',
 				displayOptions: {
 					show: {
-						operation: ['download'],
+						operation: ['delete', 'download', 'upload'],
 					},
 				},
 				default: '',
@@ -92,7 +111,7 @@ export class BasicFtp implements INodeType {
 				type: 'string',
 				displayOptions: {
 					show: {
-						operation: ['list'],
+						operation: ['list', 'mkdir', 'rmdir'],
 					},
 				},
 				default: '',
@@ -114,27 +133,28 @@ export class BasicFtp implements INodeType {
 		const credentials = await this.getCredentials('basicFtpApi') as unknown as IBasicFtpApiCredentials;
 
 		const client = new Client();
-    client.ftp.verbose = credentials.verboseLogging;
+		client.ftp.verbose = credentials.verboseLogging;
 
-    // Function to replace spaces with new lines but preserve BEGIN and END markers correctly
-    function formatPem(pem: string | undefined): string | undefined {
-        if (!pem) return pem;
-        return pem
-            .replace(/(-----BEGIN [A-Z ]+-----)([\s\S]*?)(-----END [A-Z ]+-----)/g, (match, p1, p2, p3) => {
-                const formattedContent = p2.replace(/ +/g, '\n');
-                return `${p1}${formattedContent}${p3}`;
-            });
-    }
+		// Function to replace spaces with new lines but preserve BEGIN and END markers correctly
+		// Needed because n8n converts new lines to spaces if not edited as an expression in the code editor
+		function formatPem(pem: string | undefined): string | undefined {
+			if (!pem) return pem;
+			return pem
+				.replace(/(-----BEGIN [A-Z ]+-----)([\s\S]*?)(-----END [A-Z ]+-----)/g, (match, p1, p2, p3) => {
+					const formattedContent = p2.replace(/ +/g, '\n');
+					return `${p1}${formattedContent}${p3}`;
+				});
+		}
 
-    // Format the certificate and private key
-    const cert = formatPem(credentials.certificate);
-    const key = formatPem(credentials.privateKey);
+		// Format the certificate and private key
+		const cert = formatPem(credentials.certificate);
+		const key = formatPem(credentials.privateKey);
 
 		// Construct the secureOptions object conditionally
 		const secureOptions = {
-				rejectUnauthorized: credentials.ignoreTlsIssues,
-				...(cert && { cert }), // Only include cert if it exists
-				...(key && { key }), // Only include key if it exists
+			rejectUnauthorized: credentials.ignoreTlsIssues,
+			...(cert && { cert }), // Only include cert if it exists
+			...(key && { key }), // Only include key if it exists
 		};
 
 		// Connect to the FTP server
@@ -154,20 +174,37 @@ export class BasicFtp implements INodeType {
 		for (let i = 0; i < items.length; i++) {
 			try {
 				switch (operation) {
+					case 'delete':
+						const deleteRemotePath = this.getNodeParameter('remotePath', i) as string;
+						responseData = await client.remove(deleteRemotePath);
+						break;
 					case 'download':
-						const remotePath = this.getNodeParameter('remotePath', i) as string;
-						const localPath = this.getNodeParameter('localPath', i) as string;
-						responseData = await client.downloadTo(localPath, remotePath) as unknown as IDataObject;
+						const downloadRemotePath = this.getNodeParameter('remotePath', i) as string;
+						const downloadLocalPath = this.getNodeParameter('localPath', i) as string;
+						responseData = await client.downloadTo(downloadLocalPath, downloadRemotePath) as unknown as IDataObject;
 						break;
 					case 'list':
-						const remoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
-						responseData = await client.list(remoteFolderPath);
+						const listRemoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
+						responseData = await client.list(listRemoteFolderPath);
+						break;
+					case 'mkdir':
+						const mkdirRemoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
+						await client.ensureDir(mkdirRemoteFolderPath);
+						break;
+					case 'rmdir':
+						const rmdirRemoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
+						responseData = await client.removeDir(rmdirRemoteFolderPath);
+						break;
+					case 'upload':
+						const uploadRemotePath = this.getNodeParameter('remotePath', i) as string;
+						const uploadLocalPath = this.getNodeParameter('localPath', i) as string;
+						responseData = await client.uploadFrom(uploadLocalPath, uploadRemotePath) as unknown as IDataObject;
 						break;
 					default:
 						throw new NodeOperationError(this.getNode(), `The operation "${operation}" is not supported!`);
 				}
 
-				if(!responseData) {
+				if (!responseData) {
 					responseData = { success: true };
 				}
 
