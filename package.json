@@ -32,6 +32,7 @@
     "dist"
   ],
   "n8n": {
+    "n8nNodesApiVersion": "1.0",
     "credentials": [
       "dist/credentials/BasicFtpApi.credentials.js"
     ],
