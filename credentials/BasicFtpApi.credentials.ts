@@ -5,6 +5,7 @@ import {
 
 export interface IBasicFtpApiCredentials {
 	host: string;
+	port: number;
 	user: string;
 	password: string;
 	privateKey: string;
@@ -24,6 +25,13 @@ export class BasicFtpApi implements ICredentialType {
 			required: true,
 			type: 'string',
 			default: '',
+		},
+		{
+			displayName: 'Port',
+			name: 'port',
+			type: 'number',
+			default: '',
+			description: 'The port number to connect to. Default is 21 for FTP and 990 for FTPS.',
 		},
 		{
 			displayName: 'User',

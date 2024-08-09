@@ -140,6 +140,7 @@ export class BasicFtp implements INodeType {
 		// Connect to the FTP server
 		await client.access({
 			host: credentials.host,
+			...(credentials.port && credentials.port !== 0 && { port: credentials.port }), // Only include port if it is provided
 			user: credentials.user,
 			password: credentials.password,
 			secure: credentials.secure,
@@ -156,19 +157,15 @@ export class BasicFtp implements INodeType {
 					case 'download':
 						const remotePath = this.getNodeParameter('remotePath', i) as string;
 						const localPath = this.getNodeParameter('localPath', i) as string;
-						await client.downloadTo(localPath, remotePath);
+						responseData = await client.downloadTo(localPath, remotePath) as unknown as IDataObject;
 						break;
 					case 'list':
-						const remoteDir = this.getNodeParameter('remoteFolderPath', i) as string;
-						await client.cd(remoteDir);
-						const list = await client.list();
-						responseData = list;
+						const remoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
+						responseData = await client.list(remoteFolderPath);
 						break;
 					default:
 						throw new NodeOperationError(this.getNode(), `The operation "${operation}" is not supported!`);
 				}
-
-				returnData.push(responseData as IDataObject);
 
 				if(!responseData) {
 					responseData = { success: true };
