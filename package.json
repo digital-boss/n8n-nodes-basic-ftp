@@ -53,5 +53,8 @@
   },
   "dependencies": {
     "basic-ftp": "^5.0.5"
+  },
+  "resolutions": {
+    "braces": "^3.0.3"
   }
 }
