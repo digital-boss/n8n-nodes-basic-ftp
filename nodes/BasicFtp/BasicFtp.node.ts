@@ -278,10 +278,9 @@ export class BasicFtp implements INodeType {
 					continue;
 				}
 				throw new NodeApiError(this.getNode(), error);
-			} finally {
-				client.close();
 			}
 		}
+		client.close();
 		return this.prepareOutputData(returnItems);
 	}
 }
