@@ -1,4 +1,5 @@
 import {
+	BINARY_ENCODING,
 	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
@@ -12,6 +13,10 @@ import { basicFtpApiTest } from './BasicFtpApiTest';
 
 import { Client } from 'basic-ftp';
 import { IBasicFtpApiCredentials } from '../../credentials/BasicFtpApi.credentials';
+import { Buffer } from 'buffer';
+import { Readable, Writable } from 'stream';
+import { basename } from 'path';
+
 
 export class BasicFtp implements INodeType {
 	description: INodeTypeDescription = {
@@ -77,36 +82,8 @@ export class BasicFtp implements INodeType {
 				default: 'list',
 			},
 			{
-				displayName: 'Local Path',
-				required: true,
-				name: 'localPath',
-				type: 'string',
-				displayOptions: {
-					show: {
-						operation: ['download', 'upload'],
-					},
-				},
-				default: '',
-				placeholder: '/path/to/local/file.txt',
-				description: 'The path to the file on the local machine',
-			},
-			{
-				displayName: 'Remote Path',
-				name: 'remotePath',
-				required: true,
-				type: 'string',
-				displayOptions: {
-					show: {
-						operation: ['delete', 'download', 'upload'],
-					},
-				},
-				default: '',
-				placeholder: '/path/to/remote/file.txt',
-				description: 'The path to the file on the server',
-			},
-			{
-				displayName: 'Remote Folder Path',
-				name: 'remoteFolderPath',
+				displayName: 'Folder Path',
+				name: 'folderPath',
 				required: true,
 				type: 'string',
 				displayOptions: {
@@ -118,6 +95,32 @@ export class BasicFtp implements INodeType {
 				placeholder: '/path/to/remote/folder',
 				description: 'The path to the folder on the server',
 			},
+			{
+				displayName: 'Binary Property',
+				name: 'binaryProperty',
+				type: 'string',
+				displayOptions: {
+					show: {
+						operation: ['download', 'upload'],
+					},
+				},
+				default: 'data',
+				description: 'Name of the binary property to/from which to write/read the data',
+			},
+			{
+				displayName: 'Path',
+				name: 'path',
+				required: true,
+				type: 'string',
+				displayOptions: {
+					show: {
+						operation: ['delete', 'download', 'upload'],
+					},
+				},
+				default: '',
+				placeholder: '/path/to/remote/file.txt',
+				description: 'The path to the file on the server',
+			},
 		],
 	};
 
@@ -128,7 +131,8 @@ export class BasicFtp implements INodeType {
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-
+		const items = this.getInputData();
+		let returnItems: INodeExecutionData[] = [];
 		const operation = this.getNodeParameter('operation', 0) as string;
 		const credentials = await this.getCredentials('basicFtpApi') as unknown as IBasicFtpApiCredentials;
 
@@ -167,57 +171,110 @@ export class BasicFtp implements INodeType {
 			secureOptions,
 		});
 
-		const items = this.getInputData();
-		let responseData;
-		const returnData: IDataObject[] = [];
-
 		for (let i = 0; i < items.length; i++) {
 			try {
 				switch (operation) {
-					case 'delete':
-						const deleteRemotePath = this.getNodeParameter('remotePath', i) as string;
-						responseData = await client.remove(deleteRemotePath);
+					case 'delete': {
+						const deleteRemotePath = this.getNodeParameter('path', i) as string;
+						returnItems.push({
+							json: await client.remove(deleteRemotePath) as unknown as IDataObject,
+						});
 						break;
-					case 'download':
-						const downloadRemotePath = this.getNodeParameter('remotePath', i) as string;
-						const downloadLocalPath = this.getNodeParameter('localPath', i) as string;
-						responseData = await client.downloadTo(downloadLocalPath, downloadRemotePath) as unknown as IDataObject;
+					}
+					case 'download': {
+						const downloadPath = this.getNodeParameter('path', i) as string;
+						const binaryPropertyNameDownload = this.getNodeParameter('binaryProperty', i) as string;
+
+						// Create an array to collect chunks of data
+						const chunks: Buffer[] = [];
+
+						// Create a writable stream to collect the data into the chunks array
+						const writableStream = new Writable({
+							write(chunk, encoding, callback) {
+								chunks.push(chunk);
+								callback();
+							},
+						});
+
+						// Download the file directly into the writable stream
+						await client.downloadTo(writableStream, downloadPath);
+
+						// Combine the chunks into a single buffer
+						const downloadFileBuffer = Buffer.concat(chunks);
+
+						// Prepare and store the binary data
+						const fileName = basename(downloadPath);
+						const binaryData = await this.helpers.prepareBinaryData(downloadFileBuffer, fileName);
+
+						// Create an execution data object and add it to returnItems
+						const newItem: INodeExecutionData = {
+							json: items[i].json, // Return the input JSON data
+							binary: {
+								[binaryPropertyNameDownload]: binaryData, // Store the binary data under the specified property
+							},
+						};
+
+						returnItems.push(newItem);
 						break;
-					case 'list':
-						const listRemoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
-						responseData = await client.list(listRemoteFolderPath);
+					}
+					case 'list': {
+						const listFolderPath = this.getNodeParameter('folderPath', i) as string;
+						const responseData = await client.list(listFolderPath);
+
+						if (responseData.length > 0) {
+							// Add each listed item as a separate execution data item
+							responseData.forEach((item: any) => {
+								returnItems.push({ json: item });
+							});
+						} else {
+							// If no items were listed, return success:true
+							returnItems.push({ json: { success: true } });
+						}
 						break;
-					case 'mkdir':
-						const mkdirRemoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
-						await client.ensureDir(mkdirRemoteFolderPath);
+					}
+					case 'mkdir': {
+						const mkdirFolderPath = this.getNodeParameter('folderPath', i) as string;
+						await client.ensureDir(mkdirFolderPath),
+						returnItems.push({
+							json: { success: true },
+						});
 						break;
-					case 'rmdir':
-						const rmdirRemoteFolderPath = this.getNodeParameter('remoteFolderPath', i) as string;
-						responseData = await client.removeDir(rmdirRemoteFolderPath);
+					}
+					case 'rmdir': {
+						const rmdirFolderPath = this.getNodeParameter('folderPath', i) as string;
+						await client.removeDir(rmdirFolderPath) as unknown as IDataObject
+						returnItems.push({
+							json: { success: true },
+						});
 						break;
-					case 'upload':
-						const uploadRemotePath = this.getNodeParameter('remotePath', i) as string;
-						const uploadLocalPath = this.getNodeParameter('localPath', i) as string;
-						responseData = await client.uploadFrom(uploadLocalPath, uploadRemotePath) as unknown as IDataObject;
+					}
+					case 'upload': {
+						const uploadPath = this.getNodeParameter('path', i) as string;
+						const binaryPropertyNameUpload = this.getNodeParameter('binaryProperty', i) as string;
+
+						// Retrieve the binary data from the specified binary property
+						const binaryData = this.helpers.assertBinaryData(i, binaryPropertyNameUpload);
+
+						// Convert the binary data to a buffer
+						const uploadFileBuffer = Buffer.from(binaryData.data, BINARY_ENCODING);
+
+						// Create a readable stream from the buffer
+						const readableStream = new Readable();
+						readableStream.push(uploadFileBuffer);
+						readableStream.push(null); // Signal the end of the stream
+
+						// Upload the buffer to the FTP server
+						returnItems.push({
+							json: await client.uploadFrom(readableStream, uploadPath) as unknown as IDataObject,
+						});
 						break;
+					}
 					default:
 						throw new NodeOperationError(this.getNode(), `The operation "${operation}" is not supported!`);
 				}
-
-				if (!responseData) {
-					responseData = { success: true };
-				}
-
-				if (Array.isArray(responseData)) {
-					returnData.push.apply(returnData, responseData as unknown as IDataObject[]);
-				} else {
-					returnData.push(responseData as IDataObject);
-				}
 			} catch (error) {
 				if (this.continueOnFail()) {
-					returnData.push({
-						error: error.message,
-					});
+					returnItems.push({ json: { error: error.message }, pairedItem: i });
 					continue;
 				}
 				throw new NodeApiError(this.getNode(), error);
@@ -225,6 +282,6 @@ export class BasicFtp implements INodeType {
 				client.close();
 			}
 		}
-		return [this.helpers.returnJsonArray(returnData)];
+		return this.prepareOutputData(returnItems);
 	}
 }
